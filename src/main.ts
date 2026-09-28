@@ -1,32 +1,62 @@
 import type { Level } from './ai/worker';
 import { Game, type Settings, type StartChoice } from './ui/controller';
+import { applyStaticText, type Locale } from './ui/i18n';
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const SETTINGS_KEY = 'azul-settings';
+const LEVELS: readonly Level[] = ['easy', 'normal', 'hard', 'max'];
+const START_CHOICES: readonly StartChoice[] = ['human', 'ai', 'random'];
+const LOCALES: readonly Locale[] = ['en', 'ja'];
+
+const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 const levelSel = $<HTMLSelectElement>('level');
 const startSel = $<HTMLSelectElement>('start');
+const languageSel = $<HTMLSelectElement>('language');
 
-function load(): void {
+function isOneOf<T extends string>(value: unknown, choices: readonly T[]): value is T {
+  return typeof value === 'string' && choices.some((choice: T): boolean => choice === value);
+}
+
+function browserLocale(): Locale {
+  return navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
+}
+
+function loadSettings(): Settings {
+  const defaults: Settings = { level: 'max', start: 'random', locale: browserLocale() };
   try {
-    const saved = JSON.parse(localStorage.getItem('azul-settings') ?? '{}') as Partial<Settings>;
-    if (saved.level) levelSel.value = saved.level;
-    if (saved.start) startSel.value = saved.start;
+    const saved: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
+    if (!saved || typeof saved !== 'object') return defaults;
+    const values = saved as Record<string, unknown>;
+    return {
+      level: isOneOf(values.level, LEVELS) ? values.level : defaults.level,
+      start: isOneOf(values.start, START_CHOICES) ? values.start : defaults.start,
+      locale: isOneOf(values.locale, LOCALES) ? values.locale : defaults.locale,
+    };
   } catch {
-    /* 保存領域が使えなくても遊べる */
+    // Private browsing can disable storage; the game still works with browser defaults.
+    return defaults;
   }
 }
 
-function current(): Settings {
-  const s: Settings = { level: levelSel.value as Level, start: startSel.value as StartChoice };
+function currentSettings(): Settings {
+  const settings: Settings = {
+    level: levelSel.value as Level,
+    start: startSel.value as StartChoice,
+    locale: languageSel.value as Locale,
+  };
   try {
-    localStorage.setItem('azul-settings', JSON.stringify(s));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    /* noop */
+    // The selected settings remain usable for this page load.
   }
-  return s;
+  return settings;
 }
 
-load();
+const initial = loadSettings();
+levelSel.value = initial.level;
+startSel.value = initial.start;
+languageSel.value = initial.locale;
+applyStaticText(initial.locale);
 
 const game = new Game(
   {
@@ -39,12 +69,17 @@ const game = new Game(
     modal: $<HTMLDialogElement>('modal'),
     undo: $<HTMLButtonElement>('undo'),
   },
-  current(),
+  initial,
 );
 
-$('new-game').addEventListener('click', () => game.start(current()));
-levelSel.addEventListener('change', () => game.setLevel(current().level));
-startSel.addEventListener('change', () => current());
-$('rules-btn').addEventListener('click', () => $<HTMLDialogElement>('rules').showModal());
+$('new-game').addEventListener('click', (): void => game.start(currentSettings()));
+levelSel.addEventListener('change', (): void => game.setLevel(currentSettings().level));
+startSel.addEventListener('change', (): void => { currentSettings(); });
+languageSel.addEventListener('change', (): void => {
+  const settings = currentSettings();
+  applyStaticText(settings.locale);
+  game.setLocale(settings.locale);
+});
+$('rules-btn').addEventListener('click', (): void => $<HTMLDialogElement>('rules').showModal());
 
-game.start(current());
+game.start(initial);

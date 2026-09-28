@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AiRequest } from '../src/ai/worker';
 import { Searcher } from '../src/ai/search';
 import { Game } from '../src/ui/controller';
+import { applyStaticText, type Locale } from '../src/ui/i18n';
 
 class FakeWorker {
   onmessage: ((e: MessageEvent) => void) | null = null;
@@ -33,7 +34,8 @@ beforeAll(() => {
   document.body.innerHTML = html.split('<body>')[1].split('<script')[0];
 });
 
-function makeGame(start: 'human' | 'ai'): Game {
+function makeGame(start: 'human' | 'ai', locale: Locale = 'ja'): Game {
+  const settings = { level: 'hard' as const, start, locale };
   const game = new Game(
     {
       aiBoard: $('board-ai'),
@@ -45,16 +47,42 @@ function makeGame(start: 'human' | 'ai'): Game {
       modal: $<HTMLDialogElement>('modal'),
       undo: $<HTMLButtonElement>('undo'),
     },
-    { level: 'hard', start },
+    settings,
     { aiMinMs: 0, aiPickMs: 0 },
   );
-  game.start({ level: 'hard', start });
+  game.start(settings);
   return game;
 }
 
 describe('UI', () => {
-  it('クリック操作で1局最後まで遊べる', async () => {
-    makeGame('human');
+  it('switches the interface and existing move history between English and Japanese', () => {
+    applyStaticText('en');
+    const game = makeGame('human', 'en');
+    expect(document.documentElement.lang).toBe('en');
+    expect($('new-game').textContent).toBe('New game');
+    expect($('status').textContent).toContain('Your turn');
+    expect(document.querySelector('#board-human .board-name')?.textContent).toBe('You');
+    expect(document.querySelector('#market .factory')?.getAttribute('aria-label')).toBe('Factory 1');
+
+    document.querySelector<HTMLElement>('#market .tile.clickable')!.click();
+    document.querySelector<HTMLElement>('#board-human .floor.target')!.click();
+    expect($('log').textContent).toContain('Factory');
+
+    applyStaticText('ja');
+    game.setLocale('ja');
+    expect(document.documentElement.lang).toBe('ja');
+    expect($('new-game').textContent).toBe('新しいゲーム');
+    expect($('log').textContent).toContain('工場');
+    expect(document.querySelector('#board-human .board-name')?.textContent).toBe('あなた');
+    $<HTMLButtonElement>('undo').click();
+  });
+
+  it.each([
+    { locale: 'ja', close: '閉じる', gameOver: 'ゲーム終了' },
+    { locale: 'en', close: 'Close', gameOver: 'Game over' },
+  ] as const)('plays a complete game in $locale', async ({ locale, close, gameOver }) => {
+    applyStaticText(locale);
+    makeGame('human', locale);
     let humanMoves = 0;
     let rounds = 0;
     for (let step = 0; step < 5000; step++) {
@@ -62,7 +90,7 @@ describe('UI', () => {
       if (modal.open) {
         rounds++;
         const btn = modal.querySelector('button')!;
-        const over = btn.textContent === '閉じる';
+        const over = btn.textContent === close;
         btn.click();
         if (over) break;
         await tick();
@@ -83,7 +111,7 @@ describe('UI', () => {
     }
     expect(humanMoves).toBeGreaterThan(5);
     expect(rounds).toBeGreaterThanOrEqual(5);
-    expect($('status').textContent).toContain('ゲーム終了');
+    expect($('status').textContent).toContain(gameOver);
     expect(document.querySelectorAll('#log li').length).toBeGreaterThan(10);
   }, 60000);
 

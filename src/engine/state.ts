@@ -46,8 +46,6 @@ export const wallColor = (row: number, col: number): number => (col - row + 5) %
 
 export const FLOOR_PENALTY = [0, -1, -2, -4, -6, -8, -11, -14]; // 床の枚数 → 累計減点
 
-export const COLOR_NAMES = ['青', '黄', '赤', '黒', '白'];
-
 export function cloneState(s: State): State {
   return s.slice();
 }

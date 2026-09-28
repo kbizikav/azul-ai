@@ -1,24 +1,23 @@
 import type { AiRequest, AiResponse, Level } from '../ai/worker';
-import { advance, describeMove, newGame, winner, type RoundReport } from '../engine/rules';
-import { COLOR_NAMES, CUR, OVER, P_SCORE, ROUND, encodeMove, moveColor, moveDest, moveSrc, pOff, type Move, type State } from '../engine/state';
+import { advance, newGame, winner, type RoundReport } from '../engine/rules';
+import { CUR, OVER, P_SCORE, ROUND, encodeMove, moveColor, moveDest, moveSrc, pOff, type Move, type State } from '../engine/state';
+import { formatMove, getCopy, summarizeMove, type Locale, type MoveSummary } from './i18n';
 import { renderBoard, renderMarket, tileEl, type Selection, type ViewModel } from './render';
 
 const HUMAN = 0;
 const AI = 1;
-const NAMES = ['あなた', 'AI'];
 
 export type StartChoice = 'human' | 'ai' | 'random';
 
 export interface Settings {
   level: Level;
   start: StartChoice;
+  locale: Locale;
 }
-
-const LEVEL_LABEL: Record<Level, string> = { easy: 'かんたん', normal: 'ふつう', hard: 'つよい', max: '最強' };
 
 interface LogEntry {
   player: number;
-  text: string;
+  move: MoveSummary;
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +36,7 @@ export class Game {
   private worker: Worker;
   private reqId = 0;
   private pending = new Map<number, (r: AiResponse) => void>();
-  private aiInfo = '';
+  private aiResult: { response: AiResponse; level: Level } | null = null;
 
   constructor(
     private readonly dom: {
@@ -74,6 +73,11 @@ export class Game {
     this.renderStatus();
   }
 
+  setLocale(locale: Locale): void {
+    this.settings.locale = locale;
+    this.render();
+  }
+
   start(settings: Settings): void {
     this.settings = settings;
     this.token++;
@@ -87,7 +91,7 @@ export class Game {
     this.newWall = [];
     this.log = [];
     this.undoStack = [];
-    this.aiInfo = '';
+    this.aiResult = null;
     this.busy = false;
     this.render();
     void this.continueTurn(this.token);
@@ -127,7 +131,7 @@ export class Game {
     this.lastDest = null;
     this.newWall = [];
     this.busy = false;
-    this.aiInfo = '';
+    this.aiResult = null;
     this.render();
   }
 
@@ -135,7 +139,7 @@ export class Game {
 
   private async play(m: Move, token: number): Promise<void> {
     const player = this.state[CUR];
-    this.log.push({ player, text: describeMove(this.state, m) });
+    this.log.push({ player, move: summarizeMove(this.state, m) });
     const report = advance(this.state, m);
     this.lastDest = { player, dest: moveDest(m) };
     this.newWall = [];
@@ -167,12 +171,13 @@ export class Game {
     this.busy = true;
     this.render();
     const started = performance.now();
+    const level = this.settings.level;
     const res = await this.askAi();
     if (token !== this.token || !res) return;
     const elapsed = performance.now() - started;
     if (elapsed < this.timing.aiMinMs) await wait(this.timing.aiMinMs - elapsed);
     if (token !== this.token) return;
-    this.aiInfo = this.formatAiInfo(res);
+    this.aiResult = { response: res, level };
     // 取るタイルを一瞬ハイライトしてから指す
     this.aiPick = { src: moveSrc(res.move), color: moveColor(res.move) };
     this.render();
@@ -191,25 +196,28 @@ export class Game {
     });
   }
 
-  private formatAiInfo(r: AiResponse): string {
-    if (r.score === null) return `${LEVEL_LABEL[this.settings.level]}: 直感で指しました`;
+  private formatAiInfo(r: AiResponse, level: Level): string {
+    const copy = getCopy(this.settings.locale);
+    if (r.score === null) return copy.aiIntuition(copy.levels[level]);
     const sc = r.score;
-    const lead = Math.abs(sc) < 0.5 ? '互角' : sc > 0 ? `AI 有利 (+${sc.toFixed(1)})` : `あなた有利 (+${(-sc).toFixed(1)})`;
-    const depth = r.solved ? 'ラウンド終了まで読み切り' : `${r.depth}手先まで探索`;
+    const lead = Math.abs(sc) < 0.5 ? copy.even : sc > 0 ? copy.aiAhead(sc.toFixed(1)) : copy.youAhead((-sc).toFixed(1));
+    const depth = r.solved ? copy.roundSolved : copy.searchedPlies(r.depth);
     const nodes = r.nodes >= 1e6 ? `${(r.nodes / 1e6).toFixed(1)}M` : `${Math.round(r.nodes / 1e3)}k`;
-    return `${depth} · ${nodes}局面 · ${(r.timeMs / 1000).toFixed(1)}秒\nAIの形勢判断: ${Math.abs(sc) >= 500 ? (sc > 0 ? 'AIの勝ちを読み切り' : 'あなたの勝ちを読み切り') : lead}`;
+    const assessment = Math.abs(sc) >= 500 ? (sc > 0 ? copy.forcedAiWin : copy.forcedYouWin) : lead;
+    return `${depth} · ${copy.positions(nodes)} · ${copy.seconds((r.timeMs / 1000).toFixed(1))}\n${copy.assessment(assessment)}`;
   }
 
   // ---------------- モーダル ----------------
 
   private showRoundReport(report: RoundReport): Promise<void> {
+    const copy = getCopy(this.settings.locale);
     const round = this.state[ROUND] - (report.gameOver ? 0 : 1);
     const m = this.dom.modal;
     m.replaceChildren();
     const box = document.createElement('div');
     box.className = 'modal-box';
     const h = document.createElement('h2');
-    h.textContent = report.gameOver ? 'ゲーム終了' : `ラウンド ${round} 終了`;
+    h.textContent = report.gameOver ? copy.gameOver : copy.roundEnd(round);
     box.append(h);
     const table = document.createElement('div');
     table.className = 'report';
@@ -218,21 +226,21 @@ export class Game {
       const col = document.createElement('div');
       col.className = 'report-col';
       const title = document.createElement('h3');
-      title.textContent = NAMES[p];
+      title.textContent = p === HUMAN ? copy.you : copy.ai;
       col.append(title);
       const ul = document.createElement('ul');
       for (const pl of pr.placements) {
         const li = document.createElement('li');
-        li.append(tileEl(pl.color, 'mini'), document.createTextNode(` ${pl.row + 1}段目 +${pl.points}`));
+        li.append(tileEl(pl.color, this.settings.locale, 'mini'), document.createTextNode(copy.placement(pl.row + 1, pl.points)));
         ul.append(li);
       }
-      if (pr.placements.length === 0) ul.append(Object.assign(document.createElement('li'), { textContent: '壁への配置なし' }));
-      if (pr.floorPenalty) ul.append(Object.assign(document.createElement('li'), { className: 'neg', textContent: `床 ${pr.floorPenalty}` }));
+      if (pr.placements.length === 0) ul.append(Object.assign(document.createElement('li'), { textContent: copy.noWallPlacement }));
+      if (pr.floorPenalty) ul.append(Object.assign(document.createElement('li'), { className: 'neg', textContent: copy.floorPenalty(pr.floorPenalty) }));
       if (pr.bonus) {
         const b = pr.bonus;
-        if (b.rows) ul.append(Object.assign(document.createElement('li'), { textContent: `横列ボーナス ${b.rows}×2 = +${b.rows * 2}` }));
-        if (b.cols) ul.append(Object.assign(document.createElement('li'), { textContent: `縦列ボーナス ${b.cols}×7 = +${b.cols * 7}` }));
-        if (b.colors) ul.append(Object.assign(document.createElement('li'), { textContent: `色ボーナス ${b.colors}×10 = +${b.colors * 10}` }));
+        if (b.rows) ul.append(Object.assign(document.createElement('li'), { textContent: copy.rowBonus(b.rows) }));
+        if (b.cols) ul.append(Object.assign(document.createElement('li'), { textContent: copy.columnBonus(b.cols) }));
+        if (b.colors) ul.append(Object.assign(document.createElement('li'), { textContent: copy.colorBonus(b.colors) }));
       }
       col.append(ul);
       const total = document.createElement('div');
@@ -247,12 +255,12 @@ export class Game {
       const w = winner(this.state);
       const res = document.createElement('p');
       res.className = 'result ' + (w === HUMAN ? 'win' : w === AI ? 'lose' : 'draw');
-      res.textContent = w === HUMAN ? 'あなたの勝ち!' : w === AI ? 'AIの勝ち' : '引き分け';
+      res.textContent = this.resultLabel(w);
       box.append(res);
     }
     const btn = document.createElement('button');
     btn.className = 'primary';
-    btn.textContent = report.gameOver ? '閉じる' : '次のラウンドへ';
+    btn.textContent = report.gameOver ? copy.close : copy.nextRound;
     box.append(btn);
     m.append(box);
     m.showModal();
@@ -271,11 +279,17 @@ export class Game {
     if (this.dom.modal.open) this.dom.modal.close();
   }
 
+  private resultLabel(winnerId: number): string {
+    const copy = getCopy(this.settings.locale);
+    return winnerId === HUMAN ? copy.youWin : winnerId === AI ? copy.aiWin : copy.draw;
+  }
+
   // ---------------- 描画 ----------------
 
   private render(): void {
     const vm: ViewModel = {
       state: this.state,
+      locale: this.settings.locale,
       human: HUMAN,
       selected: this.selected,
       aiPick: this.aiPick,
@@ -284,9 +298,10 @@ export class Game {
       interactive: this.canAct(),
     };
     const h = { onPick: (s: number, c: number) => this.onPick(s, c), onPlace: (d: number) => this.onPlace(d) };
-    renderBoard(this.dom.aiBoard, vm, AI, 'AI', h);
+    const copy = getCopy(this.settings.locale);
+    renderBoard(this.dom.aiBoard, vm, AI, copy.ai, h);
     renderMarket(this.dom.market, vm, h);
-    renderBoard(this.dom.humanBoard, vm, HUMAN, 'あなた', h);
+    renderBoard(this.dom.humanBoard, vm, HUMAN, copy.you, h);
     this.dom.undo.disabled = this.undoStack.length === 0;
     this.renderStatus();
     this.renderLog();
@@ -294,31 +309,33 @@ export class Game {
 
   private renderStatus(): void {
     const s = this.state;
+    const copy = getCopy(this.settings.locale);
     const st = this.dom.status;
     st.className = 'status';
     if (s[OVER]) {
       const w = winner(s);
-      st.textContent = `ゲーム終了 — ${w === HUMAN ? 'あなたの勝ち!' : w === AI ? 'AIの勝ち' : '引き分け'}(${s[pOff(HUMAN) + P_SCORE]} 対 ${s[pOff(AI) + P_SCORE]})`;
+      st.textContent = copy.finalStatus(this.resultLabel(w), s[pOff(HUMAN) + P_SCORE], s[pOff(AI) + P_SCORE]);
       st.classList.add('over');
     } else if (s[CUR] === AI) {
-      st.textContent = `ラウンド ${s[ROUND]} · AI(${LEVEL_LABEL[this.settings.level]})が考えています…`;
+      st.textContent = copy.aiThinking(s[ROUND], copy.levels[this.settings.level]);
       st.classList.add('thinking');
     } else if (this.selected) {
-      st.textContent = `ラウンド ${s[ROUND]} · ${COLOR_NAMES[this.selected.color]}を置く段を選んでください(Escで取り消し)`;
+      st.textContent = copy.chooseDestination(s[ROUND], copy.colors[this.selected.color]);
     } else {
-      st.textContent = `ラウンド ${s[ROUND]} · あなたの番です。工場か中央のタイルを選んでください`;
+      st.textContent = copy.yourTurn(s[ROUND]);
     }
-    this.dom.aiInfo.textContent = this.aiInfo;
+    this.dom.aiInfo.textContent = this.aiResult ? this.formatAiInfo(this.aiResult.response, this.aiResult.level) : '';
   }
 
   private renderLog(): void {
     const ul = this.dom.log;
+    const copy = getCopy(this.settings.locale);
     ul.replaceChildren();
     for (let i = this.log.length - 1; i >= 0 && i >= this.log.length - 40; i--) {
       const e = this.log[i];
       const li = document.createElement('li');
       li.className = e.player === HUMAN ? 'me' : 'ai';
-      li.textContent = `${NAMES[e.player]}: ${e.text}`;
+      li.textContent = `${e.player === HUMAN ? copy.you : copy.ai}: ${formatMove(e.move, this.settings.locale)}`;
       ul.append(li);
     }
   }

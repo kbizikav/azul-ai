@@ -1,44 +1,74 @@
-# Azul vs AI
+# 🟦 Azul vs AI
 
-[アプリを開く](https://azul-ai-psi.vercel.app/)
+![Azul tiles on a blue game table](docs/hero.svg)
 
-ボードゲーム「アズール」(2人用・標準ルール)をブラウザで AI と 1 対 1 で対戦できる Web サイト。
+<p align="center">
+  <strong>Build your wall. Outsmart the AI. Enjoy one more round.</strong><br />
+  A two-player Azul game you can play right in your browser.
+</p>
 
-## 遊び方
+<p align="center">
+  <a href="https://azul-ai-psi.vercel.app/"><img alt="Play online" src="https://img.shields.io/badge/▶_PLAY_ONLINE-E0A526?style=for-the-badge&amp;labelColor=13233D" /></a>
+  <img alt="English and Japanese" src="https://img.shields.io/badge/ENGLISH_+_JAPANESE-2B74B8?style=for-the-badge&amp;labelColor=13233D" />
+  <img alt="No account needed" src="https://img.shields.io/badge/NO_ACCOUNT_NEEDED-2F8F4E?style=for-the-badge&amp;labelColor=13233D" />
+</p>
 
-```sh
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # dist/ に静的ファイルを出力(GitHub Pages 等にそのまま置ける)
-```
+<p align="center">🟦 &nbsp; 🟨 &nbsp; 🟥 &nbsp; ⬛ &nbsp; ⬜</p>
 
-工場か中央のタイルをクリック → 光っている段(または床)をクリック。
-強さは「かんたん / ふつう / つよい / 最強」から選べます(既定は最強、1手あたり最大約4秒思考)。
+## ✨ At a glance
 
-## AI の仕組み
-
-- **1 ラウンド内は偶然の要素がない完全情報ゲーム**(タイルの補充はラウンド開始時だけ)なので、
-  ラウンド終了までを反復深化 αβ 探索(PVS・置換表・キラー手/ヒストリーによる手順序)で読みます。
-  ラウンド終盤は最後まで読み切ります。探索は Web Worker で動くので UI は固まりません。
-- ラウンド終了局面(または深さ制限の葉)は評価関数で評価します:
-  確定得点 + 未完成パターンラインの見込み + 横/縦/色ボーナスの進捗 + 壁の隣接ポテンシャル + 先手。
-  ゲームが終わる局面は最終得点差(+勝敗)で正確に評価します。
-- 深さ制限の葉では、両者が貪欲に指してラウンドを終わらせてから評価します(プレイアウト)。
-- 評価関数の重みは自己対戦(`scripts/selfplay.ts`)で調整しています。
-  調整後の AI(300ms/手)は初期版の AI に勝率 63%(120局)、1秒/手 では貪欲 AI に 40戦全勝(平均 66 対 30 点)。
-
-## 開発
-
-```sh
-npm test                                   # ルール・AI・UI(jsdom)のテスト
-npm run selfplay -- --a search:200 --b greedy --games 20
-npm run selfplay -- --a search:100:w.json --b search:100 --games 100   # 重み変更の比較
-```
-
-| パス | 内容 |
+| | |
 | --- | --- |
-| `src/engine/` | ルールエンジン(状態は 1 本の `Int32Array`) |
-| `src/ai/search.ts` | αβ 探索・貪欲 AI |
-| `src/ai/evaluate.ts` | 評価関数と重み |
-| `src/ai/worker.ts` | Web Worker エントリ・難易度設定 |
-| `src/ui/` | 描画と操作 |
+| 🎯 **Pick your challenge** | Four AI levels: Easy, Normal, Hard, and Expert. Expert can think for up to about four seconds per move. |
+| 🌐 **Play your way** | Switch between English and Japanese during a game. Your choice is remembered locally. |
+| ↩️ **Try another move** | Undo back to your previous turn without losing the rest of the match. |
+| 🧠 **Stay in the flow** | The AI searches in a Web Worker, so the board stays responsive while it thinks. |
+
+## 🎮 How to play
+
+1. **Take tiles.** Click a color in one factory or in the center. You take every tile of that color from that source.
+2. **Place them.** Click a highlighted pattern line or the floor. Tiles that do not fit go to the floor and may cost points.
+3. **Build your wall.** Completed lines score at the end of each round. Finish a horizontal wall row to end the game, then collect row, column, and color bonuses.
+
+Open **Rules** in the game for the full scoring details. The small number beside each score estimates what that player would gain at the end of the current round.
+
+## 🚀 Run locally
+
+```bash
+npm ci
+npm run dev
+```
+
+Visit <http://localhost:5173>. To create and preview the static production build:
+
+```bash
+npm run build
+npm run preview
+```
+
+The output is written to `dist/` and can be hosted as a static site.
+
+## 🧠 Inside the AI
+
+Tile draws happen only when a new round begins, so a round is a perfect-information game once its factories are filled. The AI uses iterative-deepening alpha-beta search with principal variation search, a transposition table, and move ordering. Near the end of a round, it can search all the way to the last move.
+
+At a search cutoff, it estimates the position from current points, partly filled lines, progress toward bonuses, nearby wall tiles, and the next first player. A short greedy playout finishes the round before evaluation. Completed games use the final score difference and outcome.
+
+The evaluation weights were tuned through self-play. In the original tuning runs, the 300 ms/search version won **63% of 120 games** against an earlier version; at one second per move, it won **40/40** against the greedy AI, with an average score of **66–30**.
+
+## 🧪 Test and tune
+
+```bash
+npm test
+npm run selfplay -- --a search:200 --b greedy --games 20
+npm run selfplay -- --a search:100:w.json --b search:100 --games 100
+```
+
+| Path | What it does |
+| --- | --- |
+| `src/engine/` | Game rules and scoring; state is stored in one `Int32Array`. |
+| `src/ai/search.ts` | Alpha-beta search and the greedy opponent. |
+| `src/ai/evaluate.ts` | Position evaluation and its weights. |
+| `src/ai/worker.ts` | Background AI worker and difficulty settings. |
+| `src/ui/` | Board rendering, interaction, and English/Japanese text. |
+| `tests/` | Rules, AI, and browser UI tests. |

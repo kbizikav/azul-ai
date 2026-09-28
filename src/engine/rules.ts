@@ -4,7 +4,6 @@ import {
   BAG,
   BOX,
   CENTER,
-  COLOR_NAMES,
   CTR,
   CTR_FIRST,
   CUR,
@@ -314,14 +313,4 @@ export function winner(s: State): number {
   const rb = completedRows(s[pOff(1) + P_WALL]);
   if (ra !== rb) return ra > rb ? 0 : 1;
   return -1;
-}
-
-export function describeMove(s: State, m: Move): string {
-  const src = moveSrc(m);
-  const color = moveColor(m);
-  const dest = moveDest(m);
-  const n = src < CENTER ? s[FACT + src * NUM_COLORS + color] : s[CTR + color];
-  const from = src < CENTER ? `工場${src + 1}` : '中央';
-  const to = dest === FLOOR_DEST ? '床' : `${dest + 1}段目`;
-  return `${from}の${COLOR_NAMES[color]}×${n} → ${to}`;
 }
