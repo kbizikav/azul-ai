@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Azul — AI対戦</title>
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>AZUL <small>vs AI</small></h1>
+      <div class="controls">
+        <label>強さ
+          <select id="level">
+            <option value="easy">かんたん</option>
+            <option value="normal">ふつう</option>
+            <option value="hard">つよい</option>
+            <option value="max" selected>最強</option>
+          </select>
+        </label>
+        <label>先手
+          <select id="start">
+            <option value="human">あなた</option>
+            <option value="ai">AI</option>
+            <option value="random" selected>ランダム</option>
+          </select>
+        </label>
+        <button id="new-game" class="primary">新しいゲーム</button>
+        <button id="undo" title="自分の直前の手まで戻す">1手戻す</button>
+        <button id="rules-btn">ルール</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="table">
+        <div class="board opponent" id="board-ai"></div>
+        <div class="market" id="market"></div>
+        <div class="board me" id="board-human"></div>
+      </section>
+      <aside class="side">
+        <p class="status" id="status" aria-live="polite"></p>
+        <p class="ai-info" id="ai-info"></p>
+        <h2>棋譜</h2>
+        <ul class="log" id="log"></ul>
+      </aside>
+    </main>
+
+    <dialog id="modal"></dialog>
+
+    <dialog id="rules">
+      <div class="modal-box rules">
+        <h2>アズールのルール(2人用)</h2>
+        <ol>
+          <li><b>タイルを取る:</b> 工場1つから同じ色を<b>すべて</b>取ります。残りは中央へ。または中央から同じ色をすべて取ります(中央から最初に取った人は先手マーカーも取り、床に置きます)。</li>
+          <li><b>パターンラインに置く:</b> 取ったタイルは1つの段に置きます(段ごとに1色だけ。壁のその段に同じ色がすでにあると置けません)。入りきらない分は床へ。床に直接置くこともできます。</li>
+          <li><b>ラウンド終了:</b> 工場と中央が空になると、埋まった段から1枚を壁の同じ色のマスへ移します。縦横につながったタイルの数だけ得点。残りのタイルは捨てられます。床のタイルは -1, -1, -2, -2, -2, -3, -3 点。</li>
+          <li><b>ゲーム終了:</b> 誰かが壁の横1列を完成させたラウンドで終了。横1列 +2点、縦1列 +7点、同じ色5枚 +10点のボーナス。</li>
+        </ol>
+        <p class="hint-text">操作: 工場・中央のタイルをクリック → 光っている段(または床)をクリック。スコア横の <span class="gain pos">+n</span> は今ラウンド終了時の予想獲得点です。</p>
+        <form method="dialog"><button class="primary">閉じる</button></form>
+      </div>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
