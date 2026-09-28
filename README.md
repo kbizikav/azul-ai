@@ -1,5 +1,7 @@
 # Azul vs AI
 
+[アプリを開く](https://azul-ai-psi.vercel.app/)
+
 ボードゲーム「アズール」(2人用・標準ルール)をブラウザで AI と 1 対 1 で対戦できる Web サイト。
 
 ## 遊び方
