@@ -13,6 +13,7 @@ import {
   P_LCOUNT,
   P_SCORE,
   P_WALL,
+  STARTER,
   moveColor,
   moveDest,
   moveSrc,
@@ -208,83 +209,60 @@ export class Stage {
     const s = pre.slice();
     show(s);
     await this.sleep(350);
-
-    for (let row = 0; row < 5; row++) {
-      const items = report.players.flatMap((pr, player) => pr.placements.filter((pl) => pl.row === row).map((pl) => ({ player, pl })));
-      if (items.length === 0) continue;
-      const flights: Flight[] = [];
-      const fades: Promise<void>[] = [];
-      for (const { player, pl } of items) {
+    // そのラウンドの先手から 1 人ずつ、1 枚ずつ数える
+    const starter = pre[STARTER];
+    for (const player of [starter, 1 - starter]) {
+      const pr = report.players[player];
+      const o = pOff(player);
+      for (const pl of pr.placements) {
         const board = this.board(player);
-        const line = board.querySelector(`.line[data-row="${row}"]`);
-        const first = line?.querySelector('.slot[data-i="0"] .tile');
-        const cell = board.querySelector<HTMLElement>(`.cell[data-row="${row}"][data-col="${pl.col}"]`);
-        if (!line || !first || !cell) continue;
-        (first as HTMLElement).style.visibility = 'hidden';
-        flights.push({ color: pl.color, from: first.getBoundingClientRect(), to: cell });
-        for (const t of line.querySelectorAll('.slot:not([data-i="0"]) .tile')) {
-          fades.push(this.play(t, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(6px) scale(.8)' }], 380));
+        const line = board.querySelector(`.line[data-row="${pl.row}"]`);
+        const first = line?.querySelector<HTMLElement>('.slot[data-i="0"] .tile');
+        const cell = board.querySelector<HTMLElement>(`.cell[data-row="${pl.row}"][data-col="${pl.col}"]`);
+        if (line && first && cell) {
+          first.style.visibility = 'hidden';
+          const fades = [...line.querySelectorAll('.slot:not([data-i="0"]) .tile')].map((t) =>
+            this.play(t, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(6px) scale(.8)' }], 380),
+          );
+          await Promise.all([this.fly([{ color: pl.color, from: first.getBoundingClientRect(), to: cell }], 460, 0), ...fades]);
         }
-      }
-      await Promise.all([this.fly(flights, 480, 0), ...fades]);
-      for (const { player, pl } of items) {
-        const o = pOff(player);
-        s[o + P_WALL] |= bit(row, pl.col);
-        s[o + P_LCOUNT + row] = 0;
-        s[o + P_LCOLOR + row] = -1;
+        s[o + P_WALL] |= bit(pl.row, pl.col);
+        s[o + P_LCOUNT + pl.row] = 0;
+        s[o + P_LCOLOR + pl.row] = -1;
         s[o + P_SCORE] += pl.points;
-      }
-      show(s);
-      for (const { player, pl } of items) {
-        const cells = runCells(s[pOff(player) + P_WALL], row, pl.col);
-        this.pulse(player, cells);
-        this.floatText(this.cellRect(player, row, pl.col), `+${pl.points}`, 'plus');
+        show(s);
+        this.pulse(player, runCells(s[o + P_WALL], pl.row, pl.col));
+        this.floatText(this.cellRect(player, pl.row, pl.col), `+${pl.points}`, 'plus');
         this.bump(player);
+        await this.sleep(650);
       }
-      await this.sleep(750);
-    }
 
-    const floors = report.players.map((pr, player) => ({ player, pr })).filter(({ player }) => s[pOff(player) + P_FLOOR_LEN] > 0);
-    if (floors.length) {
-      const fades: Promise<void>[] = [];
-      for (const { player, pr } of floors) {
+      if (s[o + P_FLOOR_LEN] > 0) {
         const floor = this.board(player).querySelector('.floor');
-        if (!floor) continue;
-        if (pr.floorPenalty) this.floatText(floor.getBoundingClientRect(), String(pr.floorPenalty), 'minus');
-        for (const t of floor.querySelectorAll('.tile')) {
-          fades.push(this.play(t, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(10px) rotate(8deg)' }], 520, { delay: 250 * this.factor }));
+        if (floor) {
+          if (pr.floorPenalty) this.floatText(floor.getBoundingClientRect(), String(pr.floorPenalty), 'minus');
+          const fades = [...floor.querySelectorAll('.tile')].map((t) =>
+            this.play(t, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(10px) rotate(8deg)' }], 520, { delay: 250 * this.factor }),
+          );
+          await Promise.all(fades);
         }
-      }
-      await Promise.all(fades);
-      for (const { player, pr } of floors) {
-        const o = pOff(player);
         s[o + P_FLOOR_LEN] = 0;
         s[o + P_SCORE] = Math.max(0, s[o + P_SCORE] + pr.floorPenalty);
+        show(s);
+        if (pr.floorPenalty) this.bump(player);
+        await this.sleep(550);
       }
-      show(s);
-      for (const { player, pr } of floors) if (pr.floorPenalty) this.bump(player);
-      await this.sleep(550);
-    }
 
-    if (!report.gameOver) return;
-    const bonuses = report.players.map((_, player) => bonusSteps(s[pOff(player) + P_WALL]));
-    const steps = Math.max(...bonuses.map((b) => b.length));
-    for (let i = 0; i < steps; i++) {
-      for (let player = 0; player < bonuses.length; player++) {
-        const b = bonuses[player][i];
-        if (!b) continue;
-        s[pOff(player) + P_SCORE] += b.points;
-      }
-      show(s);
-      for (let player = 0; player < bonuses.length; player++) {
-        const b = bonuses[player][i];
-        if (!b) continue;
+      if (!report.gameOver) continue;
+      for (const b of bonusSteps(s[o + P_WALL])) {
+        s[o + P_SCORE] += b.points;
+        show(s);
         this.pulse(player, b.cells, 'bonus');
         const [row, col] = b.cells[b.cells.length - 1];
         this.floatText(this.cellRect(player, row, col), `+${b.points}`, 'bonus');
         this.bump(player);
+        await this.sleep(850);
       }
-      await this.sleep(900);
     }
   }
 
