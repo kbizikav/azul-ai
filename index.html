@@ -3,55 +3,86 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f1d33" />
     <title>Azul — Play against AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/ui/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <h1>AZUL <small>vs AI</small></h1>
-      <div class="controls">
-        <label><span data-i18n="levelLabel">Difficulty</span>
-          <select id="level">
-            <option value="easy">Easy</option>
-            <option value="normal">Normal</option>
-            <option value="hard">Hard</option>
-            <option value="max" selected>Expert</option>
-          </select>
-        </label>
-        <label><span data-i18n="startLabel">First player</span>
-          <select id="start">
-            <option value="human" data-i18n="startYou">You</option>
-            <option value="ai" data-i18n="startAi">AI</option>
-            <option value="random" data-i18n="startRandom" selected>Random</option>
-          </select>
-        </label>
-        <label><span data-i18n="languageLabel">Language</span>
-          <select id="language">
-            <option value="en">English</option>
-            <option value="ja">日本語</option>
-          </select>
-        </label>
-        <button id="new-game" class="primary" data-i18n="newGame">New game</button>
-        <button id="undo" data-i18n="undo" data-i18n-title="undoTitle" title="Go back to your previous turn">Undo</button>
-        <button id="rules-btn" data-i18n="rules">Rules</button>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i class="c0"></i><i class="c1"></i><i class="c2"></i><i class="c4"></i></span>
+        <h1>AZUL <small data-i18n="tagline">vs AI</small></h1>
       </div>
+      <nav class="actions">
+        <button id="undo" class="ghost" data-i18n-title="undoTitle" title="Go back to your previous turn"><span aria-hidden="true">↶</span> <span data-i18n="undo">Undo</span></button>
+        <button id="rules-btn" class="ghost"><span aria-hidden="true">?</span> <span data-i18n="rules">Rules</span></button>
+        <button id="settings-btn" class="ghost"><span aria-hidden="true">⚙</span> <span data-i18n="settings">Settings</span></button>
+        <button id="new-game" class="primary" data-i18n="newGame">New game</button>
+      </nav>
     </header>
 
     <main class="layout">
-      <section class="table">
-        <div class="board opponent" id="board-ai"></div>
-        <div class="market" id="market"></div>
-        <div class="board me" id="board-human"></div>
-      </section>
+      <section class="market" id="market"></section>
+      <section class="board opponent" id="board-ai"></section>
+      <section class="board me" id="board-human"></section>
       <aside class="side">
-        <p class="status" id="status" aria-live="polite"></p>
-        <p class="ai-info" id="ai-info"></p>
-        <h2 data-i18n="moveLog">Move history</h2>
-        <ul class="log" id="log"></ul>
+        <div class="status-card"><p class="status" id="status" aria-live="polite"></p></div>
+        <section class="review" id="review" hidden></section>
+        <div class="log-card">
+          <h2 data-i18n="moveLog">Moves</h2>
+          <ol class="log" id="log"></ol>
+        </div>
       </aside>
     </main>
 
     <dialog id="modal"></dialog>
+
+    <dialog id="newgame-dialog">
+      <form method="dialog" class="modal-box">
+        <h2 data-i18n="newGameTitle">Start a new game</h2>
+        <fieldset class="choice">
+          <legend data-i18n="levelLabel">Difficulty</legend>
+          <label><input type="radio" name="level" value="easy" /><span data-level-label="easy">Easy</span></label>
+          <label><input type="radio" name="level" value="normal" /><span data-level-label="normal">Normal</span></label>
+          <label><input type="radio" name="level" value="hard" /><span data-level-label="hard">Hard</span></label>
+          <label><input type="radio" name="level" value="max" /><span data-level-label="max">Expert</span></label>
+        </fieldset>
+        <fieldset class="choice">
+          <legend data-i18n="startLabel">First player</legend>
+          <label><input type="radio" name="start" value="human" /><span data-i18n="startYou">You</span></label>
+          <label><input type="radio" name="start" value="ai" /><span data-i18n="startAi">AI</span></label>
+          <label><input type="radio" name="start" value="random" /><span data-i18n="startRandom">Random</span></label>
+        </fieldset>
+        <div class="modal-actions">
+          <button value="cancel" data-i18n="cancel">Cancel</button>
+          <button value="start" class="primary" id="start-game" data-i18n="startGame">Start</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settings-dialog">
+      <form method="dialog" class="modal-box">
+        <h2 data-i18n="settingsTitle">Settings</h2>
+        <fieldset class="choice">
+          <legend data-i18n="languageLabel">Language</legend>
+          <label><input type="radio" name="locale" value="en" /><span>English</span></label>
+          <label><input type="radio" name="locale" value="ja" /><span>日本語</span></label>
+        </fieldset>
+        <fieldset class="choice">
+          <legend data-i18n="animLabel">Animations</legend>
+          <label><input type="radio" name="anim" value="normal" /><span data-i18n="animNormal">Normal</span></label>
+          <label><input type="radio" name="anim" value="fast" /><span data-i18n="animFast">Fast</span></label>
+          <label><input type="radio" name="anim" value="off" /><span data-i18n="animOff">Off</span></label>
+        </fieldset>
+        <label class="check"><input type="checkbox" name="showGain" /><span data-i18n="gainLabel">Show points expected at the end of the round</span></label>
+        <div class="modal-actions">
+          <button class="primary" data-i18n="close">Close</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="rules">
       <div class="modal-box rules">
@@ -62,8 +93,8 @@
           <li><b data-i18n="ruleRoundTitle">End of a round:</b> <span data-i18n="ruleRoundBody">When the factories and center are empty, move one tile from each complete line to its matching wall space. Score connected horizontal and vertical tiles. Discard the remaining tiles. Floor penalties are −1, −1, −2, −2, −2, −3, −3.</span></li>
           <li><b data-i18n="ruleEndTitle">End of the game:</b> <span data-i18n="ruleEndBody">The game ends after a round in which a player completes a horizontal wall row. Earn bonuses of +2 for each complete row, +7 for each complete column, and +10 for each set of five tiles of one color.</span></li>
         </ol>
-        <p class="hint-text"><span data-i18n="controlsHint">Click a tile in a factory or the center, then click a highlighted line or the floor.</span> <span class="gain pos">+n</span><span data-i18n="gainHint"> beside a score estimates points earned at the end of this round.</span></p>
-        <form method="dialog"><button class="primary" data-i18n="close">Close</button></form>
+        <p class="hint-text"><span data-i18n="controlsHint">Click a tile in a factory or the center, then click a highlighted line or the floor.</span> <span class="gain pos">+n</span><span data-i18n="gainHint"> beside a score shows the points that player would gain if the round ended now.</span></p>
+        <form method="dialog" class="modal-actions"><button class="primary" data-i18n="close">Close</button></form>
       </div>
     </dialog>
 

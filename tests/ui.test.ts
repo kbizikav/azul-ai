@@ -35,20 +35,20 @@ beforeAll(() => {
 });
 
 function makeGame(start: 'human' | 'ai', locale: Locale = 'ja'): Game {
-  const settings = { level: 'hard' as const, start, locale };
+  const settings = { level: 'hard' as const, start, locale, anim: 'off' as const, showGain: true };
   const game = new Game(
     {
       aiBoard: $('board-ai'),
       humanBoard: $('board-human'),
       market: $('market'),
       status: $('status'),
-      aiInfo: $('ai-info'),
       log: $('log'),
+      review: $('review'),
       modal: $<HTMLDialogElement>('modal'),
       undo: $<HTMLButtonElement>('undo'),
     },
     settings,
-    { aiMinMs: 0, aiPickMs: 0 },
+    { aiMinMs: 0, aiPickMs: 0, analysisMs: 10 },
   );
   game.start(settings);
   return game;
@@ -63,6 +63,7 @@ describe('UI', () => {
     expect($('status').textContent).toContain('Your turn');
     expect(document.querySelector('#board-human .board-name')?.textContent).toBe('You');
     expect(document.querySelector('#market .factory')?.getAttribute('aria-label')).toBe('Factory 1');
+    expect($('review').hidden).toBe(true);
 
     document.querySelector<HTMLElement>('#market .tile.clickable')!.click();
     document.querySelector<HTMLElement>('#board-human .floor.target')!.click();
@@ -78,24 +79,14 @@ describe('UI', () => {
   });
 
   it.each([
-    { locale: 'ja', close: '閉じる', gameOver: 'ゲーム終了' },
-    { locale: 'en', close: 'Close', gameOver: 'Game over' },
-  ] as const)('plays a complete game in $locale', async ({ locale, close, gameOver }) => {
+    { locale: 'ja', gameOver: 'ゲーム終了', review: '振り返る' },
+    { locale: 'en', gameOver: 'Game over', review: 'Review' },
+  ] as const)('plays a complete game in $locale and reviews it', async ({ locale, gameOver, review }) => {
     applyStaticText(locale);
     makeGame('human', locale);
     let humanMoves = 0;
-    let rounds = 0;
-    for (let step = 0; step < 5000; step++) {
-      const modal = $<HTMLDialogElement>('modal');
-      if (modal.open) {
-        rounds++;
-        const btn = modal.querySelector('button')!;
-        const over = btn.textContent === close;
-        btn.click();
-        if (over) break;
-        await tick();
-        continue;
-      }
+    const modal = $<HTMLDialogElement>('modal');
+    for (let step = 0; step < 5000 && !modal.open; step++) {
       const tile = document.querySelector<HTMLElement>('#market .tile.clickable');
       if (tile) {
         tile.click();
@@ -109,23 +100,46 @@ describe('UI', () => {
       }
       await tick();
     }
+    expect(modal.open).toBe(true);
     expect(humanMoves).toBeGreaterThan(5);
-    expect(rounds).toBeGreaterThanOrEqual(5);
+    expect(document.querySelectorAll('#log .round-result').length).toBeGreaterThanOrEqual(5);
     expect($('status').textContent).toContain(gameOver);
-    expect(document.querySelectorAll('#log li').length).toBeGreaterThan(10);
-  }, 60000);
+    const moves = document.querySelectorAll('#log li.mv').length;
+    expect(moves).toBeGreaterThan(10);
+
+    // 評価値は終局後にだけ表示される
+    const reviewBtn = [...modal.querySelectorAll('button')].find((b) => b.textContent === review)!;
+    reviewBtn.click();
+    expect(modal.open).toBe(false);
+    expect($('review').hidden).toBe(false);
+    for (let i = 0; i < 5000 && document.querySelector('#review .analyzing'); i++) await tick();
+    expect(document.querySelector('#review .analyzing')).toBeNull();
+    const path = document.querySelector('#review .graph-svg path.line')!.getAttribute('d')!;
+    expect(path.split('L').length).toBe(moves + 1);
+    expect(document.querySelector('#board-human .tile.clickable')).toBeNull();
+
+    // リプレイ: 最初の局面へ戻り、1手ずつ進める
+    document.querySelector<HTMLElement>('#log li.mv')!.click();
+    expect(document.querySelector('#log li.current .mv-no')?.textContent).toBe('1');
+    expect(document.querySelector('#market .tile.picked')).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    await tick();
+    expect(document.querySelector('#log li.current .mv-no')?.textContent).toBe('2');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+    expect(document.querySelector('#review .review-pos')?.textContent).toBe(`${moves} / ${moves}`);
+  }, 120000);
 
   it('AI先手で始まり、1手戻すで自分の手番に戻る', async () => {
     makeGame('ai');
     for (let i = 0; i < 50 && !document.querySelector('#market .tile.clickable'); i++) await tick();
-    expect(document.querySelectorAll('#log li').length).toBe(1); // AI の初手
+    expect(document.querySelectorAll('#log li.mv').length).toBe(1); // AI の初手
     const tile = document.querySelector<HTMLElement>('#market .tile.clickable')!;
     tile.click();
     document.querySelector<HTMLElement>('#board-human .floor.target')!.click();
     for (let i = 0; i < 50 && !document.querySelector('#market .tile.clickable'); i++) await tick();
-    expect(document.querySelectorAll('#log li').length).toBe(3);
+    expect(document.querySelectorAll('#log li.mv').length).toBe(3);
     $<HTMLButtonElement>('undo').click();
-    expect(document.querySelectorAll('#log li').length).toBe(1);
+    expect(document.querySelectorAll('#log li.mv').length).toBe(1);
     expect(document.querySelector('#market .tile.clickable')).not.toBeNull();
     expect($<HTMLButtonElement>('undo').disabled).toBe(true);
   });

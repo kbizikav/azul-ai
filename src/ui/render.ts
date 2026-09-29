@@ -29,18 +29,31 @@ export interface Selection {
   color: number;
 }
 
+/** 盤面上で強調表示する 1 手(取得元のタイルと置き先) */
+export interface MoveMark extends Selection {
+  player: number;
+  dest: number;
+}
+
 export interface ViewModel {
   state: State;
   locale: Locale;
   human: number;
+  /** プレイヤーごとの表示名 */
+  names: readonly string[];
+  /** 名前の横に出す補足(AI の強さなど) */
+  tags: readonly string[];
   selected: Selection | null;
-  /** AI が取ろうとしているタイル(演出用) */
-  aiPick: Selection | null;
-  /** 直前の手の置き先(演出用) */
+  /** 相手がこれから指す手 / リプレイで次に指される手 */
+  pending: MoveMark | null;
+  /** リプレイで AI が推奨する手 */
+  suggestion: MoveMark | null;
+  /** 直前の相手の手の置き先(次に自分が指すまで残す) */
   lastDest: { player: number; dest: number } | null;
-  /** ラウンド終了で新しく壁に置かれたマス(演出用) */
-  newWall: { player: number; row: number; col: number }[];
+  /** 工場にタイルが補充されてからの経過時間(ms)。配る演出中でなければ null */
+  dealt: number | null;
   interactive: boolean;
+  showGain: boolean;
 }
 
 export interface Handlers {
@@ -50,7 +63,7 @@ export interface Handlers {
 
 const PENALTY_LABELS = ['-1', '-1', '-2', '-2', '-2', '-3', '-3'];
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = text;
@@ -73,75 +86,115 @@ export function projectedGain(s: State, p: number): number {
   return copy[pOff(p) + P_SCORE] - before;
 }
 
+function onActivate(target: HTMLElement, fn: () => void): void {
+  target.addEventListener('click', fn);
+  target.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fn();
+    }
+  });
+}
+
+const sameSource = (m: Selection | null, src: number, color: number): boolean => !!m && m.src === src && m.color === color;
+
 export function renderMarket(root: HTMLElement, vm: ViewModel, h: Handlers): void {
   const s = vm.state;
   const copy = getCopy(vm.locale);
   root.replaceChildren();
-  const factories = el('div', 'factories');
+  const ring = el('div', 'ring');
+  let dealIndex = 0;
   for (let f = 0; f < NUM_FACTORIES; f++) {
-    const fac = el('div', 'factory');
+    const fac = el('div', 'factory source');
+    fac.style.setProperty('--i', String(f));
+    fac.dataset.factory = String(f);
     fac.setAttribute('aria-label', copy.factory(f + 1));
+    fac.setAttribute('role', 'group');
     const tiles: number[] = [];
     for (let c = 0; c < NUM_COLORS; c++) for (let i = 0; i < s[FACT + f * NUM_COLORS + c]; i++) tiles.push(c);
     if (tiles.length === 0) fac.classList.add('empty');
-    for (const c of tiles) fac.append(sourceTile(vm, h, f, c));
-    factories.append(fac);
+    for (const c of tiles) {
+      const t = sourceTile(vm, h, f, c);
+      if (vm.dealt !== null) {
+        // 描き直しても演出が最初からやり直しにならないよう、経過時間ぶん遅延を前倒しする
+        t.classList.add('deal');
+        t.style.animationDelay = `calc(var(--speed, 1) * ${dealIndex++ * 35}ms - ${Math.round(vm.dealt)}ms)`;
+      }
+      fac.append(t);
+    }
+    ring.append(fac);
   }
-  const center = el('div', 'center');
+  const center = el('div', 'center source');
+  center.dataset.center = '';
   center.setAttribute('aria-label', copy.center);
-  if (s[CTR_FIRST]) center.append(tileEl(FIRST_TOKEN, vm.locale, 'token'));
+  center.setAttribute('role', 'group');
+  if (s[CTR_FIRST]) {
+    const token = tileEl(FIRST_TOKEN, vm.locale, 'token');
+    token.dataset.token = '';
+    token.title = copy.firstPlayerMarker;
+    center.append(token);
+  }
   for (let c = 0; c < NUM_COLORS; c++) {
     const n = s[CTR + c];
     if (!n) continue;
     const group = el('div', 'center-group');
-    for (let i = 0; i < n; i++) group.append(sourceTile(vm, h, CENTER, c));
+    group.dataset.color = String(c);
+    for (let i = 0; i < n; i++) {
+      const t = sourceTile(vm, h, CENTER, c);
+      t.dataset.i = String(i);
+      group.append(t);
+    }
+    if (n > 1) group.append(el('span', 'count', `×${n}`));
     center.append(group);
   }
   if (center.childElementCount === 0) center.append(el('span', 'center-label', copy.center));
-  root.append(factories, center);
+  ring.append(center);
+  root.append(ring);
 }
 
 function sourceTile(vm: ViewModel, h: Handlers, src: number, color: number): HTMLElement {
   const t = tileEl(color, vm.locale);
-  const sel = vm.selected;
-  const ai = vm.aiPick;
-  if (sel && sel.src === src && sel.color === color) t.classList.add('selected');
-  if (ai && ai.src === src && ai.color === color) t.classList.add('ai-pick');
+  t.dataset.src = String(src);
+  t.dataset.color = String(color);
+  if (sameSource(vm.selected, src, color)) t.classList.add('selected');
+  if (sameSource(vm.pending, src, color)) t.classList.add('picked');
+  if (sameSource(vm.suggestion, src, color)) t.classList.add('suggested');
   if (vm.interactive) {
     t.classList.add('clickable');
     t.tabIndex = 0;
-    const pick = () => h.onPick(src, color);
-    t.addEventListener('click', pick);
-    t.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        pick();
-      }
-    });
+    t.setAttribute('role', 'button');
+    onActivate(t, () => h.onPick(src, color));
   }
   return t;
 }
 
-export function renderBoard(root: HTMLElement, vm: ViewModel, player: number, name: string, h: Handlers): void {
+export function renderBoard(root: HTMLElement, vm: ViewModel, player: number, h: Handlers): void {
   const s = vm.state;
   const copy = getCopy(vm.locale);
   const o = pOff(player);
   const wall = s[o + P_WALL];
   const isHuman = player === vm.human;
   const sel = isHuman && vm.interactive ? vm.selected : null;
+  const marks = (m: MoveMark | null, dest: number): boolean => !!m && m.player === player && m.dest === dest;
   root.replaceChildren();
+  root.dataset.player = String(player);
   root.classList.toggle('active', !s[OVER] && s[CUR] === player);
 
   const head = el('div', 'board-head');
-  head.append(el('span', 'board-name', name));
-  const score = el('span', 'board-score');
-  score.append(el('b', '', String(s[o + P_SCORE])), document.createTextNode(copy.points));
-  if (!s[OVER]) {
+  const who = el('div', 'who');
+  who.append(el('span', 'turn-dot'), el('span', 'board-name', vm.names[player]));
+  if (vm.tags[player]) who.append(el('span', 'tag', vm.tags[player]));
+  head.append(who);
+  const score = el('div', 'board-score');
+  if (vm.showGain && !s[OVER]) {
     const gain = projectedGain(s, player);
     const g = el('span', `gain ${gain >= 0 ? 'pos' : 'neg'}`, `${gain >= 0 ? '+' : ''}${gain}`);
     g.title = copy.projectedGain;
     score.append(g);
   }
+  const value = el('b', '', String(s[o + P_SCORE]));
+  value.dataset.score = '';
+  score.append(value, el('span', 'unit', copy.points));
   head.append(score);
   root.append(head);
 
@@ -149,28 +202,27 @@ export function renderBoard(root: HTMLElement, vm: ViewModel, player: number, na
   const lines = el('div', 'lines');
   for (let row = 0; row < 5; row++) {
     const line = el('div', 'line');
+    line.dataset.row = String(row);
     const cnt = s[o + P_LCOUNT + row];
     const color = s[o + P_LCOLOR + row];
     for (let i = row; i >= 0; i--) {
       const slot = el('div', 'slot');
+      slot.dataset.i = String(i);
       // 右詰めで埋まる: 右端から cnt 枚
       if (i < cnt) slot.append(tileEl(color, vm.locale));
       line.append(slot);
     }
-    if (vm.lastDest && vm.lastDest.player === player && vm.lastDest.dest === row) line.classList.add('flash');
+    if (cnt === row + 1) line.classList.add('full');
+    if (vm.lastDest && vm.lastDest.player === player && vm.lastDest.dest === row) line.classList.add('last');
+    if (marks(vm.pending, row)) line.classList.add('marked');
+    if (marks(vm.suggestion, row)) line.classList.add('suggested');
     if (sel) {
       if (canPlace(s, player, sel.color, row)) {
         line.classList.add('target');
         line.tabIndex = 0;
         line.setAttribute('role', 'button');
         line.setAttribute('aria-label', copy.placeRow(row + 1));
-        line.addEventListener('click', () => h.onPlace(row));
-        line.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            h.onPlace(row);
-          }
-        });
+        onActivate(line, () => h.onPlace(row));
       } else {
         line.classList.add('blocked');
       }
@@ -183,12 +235,13 @@ export function renderBoard(root: HTMLElement, vm: ViewModel, player: number, na
     for (let col = 0; col < 5; col++) {
       const c = wallColor(row, col);
       const cell = el('div', `cell c${c}`);
+      cell.dataset.row = String(row);
+      cell.dataset.col = String(col);
       if (wall & bit(row, col)) {
-        const t = tileEl(c, vm.locale);
-        if (vm.newWall.some((w) => w.player === player && w.row === row && w.col === col)) t.classList.add('placed');
-        cell.append(t);
-      } else if (sel && sel.color === c && canPlace(s, player, c, row)) {
-        cell.classList.add('hint');
+        cell.append(tileEl(c, vm.locale));
+      } else {
+        cell.append(el('div', `tile ghost c${c}`));
+        if (sel && sel.color === c && canPlace(s, player, c, row)) cell.classList.add('hint');
       }
       wallEl.append(cell);
     }
@@ -200,23 +253,20 @@ export function renderBoard(root: HTMLElement, vm: ViewModel, player: number, na
   const len = s[o + P_FLOOR_LEN];
   for (let i = 0; i < FLOOR_SIZE; i++) {
     const slot = el('div', 'fslot');
+    slot.dataset.i = String(i);
     slot.append(el('span', 'pen', PENALTY_LABELS[i]));
     if (i < len) slot.append(tileEl(s[o + P_FLOOR + i], vm.locale));
     floor.append(slot);
   }
-  if (vm.lastDest && vm.lastDest.player === player && vm.lastDest.dest === FLOOR_DEST) floor.classList.add('flash');
+  if (vm.lastDest && vm.lastDest.player === player && vm.lastDest.dest === FLOOR_DEST) floor.classList.add('last');
+  if (marks(vm.pending, FLOOR_DEST)) floor.classList.add('marked');
+  if (marks(vm.suggestion, FLOOR_DEST)) floor.classList.add('suggested');
   if (sel) {
     floor.classList.add('target');
     floor.tabIndex = 0;
     floor.setAttribute('role', 'button');
     floor.setAttribute('aria-label', copy.placeFloor);
-    floor.addEventListener('click', () => h.onPlace(FLOOR_DEST));
-    floor.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        h.onPlace(FLOOR_DEST);
-      }
-    });
+    onActivate(floor, () => h.onPlace(FLOOR_DEST));
   }
   root.append(floor);
 }

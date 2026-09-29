@@ -22,6 +22,8 @@
 | 🎯 **Pick your challenge** | Four AI levels: Easy, Normal, Hard, and Expert. Expert can think for up to about four seconds per move. |
 | 🌐 **Play your way** | Switch between English and Japanese during a game. Your choice is remembered locally. |
 | ↩️ **Try another move** | Undo back to your previous turn without losing the rest of the match. |
+| 🎬 **Watch every move** | The AI's tiles glide from the factory to its board, and round scoring counts up line by line (+2, +3, −1…) like the physical game. Animations can be set to Normal, Fast, or Off. |
+| 📈 **Review the game** | After the final score, see an evaluation graph of the whole match, replay it move by move, and compare each move with the AI's suggestion. Evaluations stay hidden while you play. |
 | 🧠 **Stay in the flow** | The AI searches in a Web Worker, so the board stays responsive while it thinks. |
 
 ## 🎮 How to play
@@ -70,5 +72,5 @@ npm run selfplay -- --a search:100:w.json --b search:100 --games 100
 | `src/ai/search.ts` | Alpha-beta search and the greedy opponent. |
 | `src/ai/evaluate.ts` | Position evaluation and its weights. |
 | `src/ai/worker.ts` | Background AI worker and difficulty settings. |
-| `src/ui/` | Board rendering, interaction, and English/Japanese text. |
+| `src/ui/` | Board rendering, animations, post-game review graph, interaction, and English/Japanese text. |
 | `tests/` | Rules, AI, and browser UI tests. |
