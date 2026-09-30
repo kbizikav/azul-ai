@@ -495,6 +495,8 @@ body.reviewing .tile.picked {
   --fd: calc(var(--t) * 2 + var(--gap) + 28px);
   --R: calc(var(--t) * 4.75);
   --cy: calc(var(--R) + var(--fd) / 2);
+  --cd: calc(var(--R) * 2 - var(--fd) - 12px); /* 中央の円の直径 */
+  --tc: calc(var(--t) * 0.82); /* 中央のタイルの大きさ */
   position: relative;
   width: calc(var(--R) * 2 + var(--fd));
   height: calc(var(--R) * 1.81 + var(--fd));
@@ -516,6 +518,7 @@ body.reviewing .tile.picked {
   position: absolute;
   left: 50%;
   top: var(--cy);
+  z-index: 1; /* 中央のタイルがはみ出しても皿のクリックを奪わない */
   width: var(--fd);
   height: var(--fd);
   transform: translate(-50%, -50%) rotate(var(--a)) translate(var(--R)) rotate(calc(-1 * var(--a)));
@@ -540,9 +543,11 @@ body.reviewing .tile.picked {
 }
 .center {
   position: absolute;
+  /* 中央の装飾や余白が工場に重なっても、タイル以外ではクリックを受け取らない。 */
+  pointer-events: none;
   left: 50%;
   top: var(--cy);
-  width: calc(var(--R) * 2 - var(--fd) - 12px);
+  width: var(--cd);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
@@ -553,8 +558,15 @@ body.reviewing .tile.picked {
   align-items: center;
   align-content: center;
   justify-content: center;
-  gap: 10px 12px;
-  padding: 14%;
+  gap: 8px 12px;
+  /* % 指定だと親(ring)の幅基準になり内側が狭くなりすぎるので、円の直径から内接する正方形ぶんを空ける */
+  padding: calc(var(--cd) * 0.12);
+}
+.center .tile {
+  --t: var(--tc);
+}
+.center .tile.clickable {
+  pointer-events: auto;
 }
 .center-group {
   display: flex;
