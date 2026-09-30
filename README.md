@@ -50,6 +50,12 @@ npm run preview
 
 The output is written to `dist/` and can be hosted as a static site.
 
+### Continuous integration and deployment
+
+GitHub Actions runs `npm run check` (tests, TypeScript checks, and the production build) on pushes and pull requests with Node.js 24.
+
+The Vercel project is connected to this GitHub repository. Pushing to `main` automatically starts a production deployment to <https://azul-ai-psi.vercel.app/>. Vercel also runs `npm run check` before publishing, so failed tests or builds prevent that deployment from replacing the current site. The build command and automatic Git deployment setting are tracked in `vercel.json`.
+
 ## 🧠 Inside the AI
 
 Tile draws happen only when a new round begins, so a round is a perfect-information game once its factories are filled. The AI uses iterative-deepening alpha-beta search with principal variation search, a transposition table, and move ordering. Near the end of a round, it can search all the way to the last move.
